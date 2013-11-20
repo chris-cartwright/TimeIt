@@ -16,3 +16,12 @@
 *.exe
 *.out
 *.app
+
+# Custom
+*.eep
+*.elf
+*.lss
+*.lst
+*.map
+*.sym
+*.dep
