@@ -27,12 +27,13 @@
 
 */
 
-#define NORMAL_TIME
+//#define NORMAL_TIME
 //#define DEBUG_TIME
 
 #include <stdio.h>
 #include <avr/io.h>
 #include <avr/interrupt.h>
+#include <stdbool.h>
 
 #define sbi(port, pin)   ((port) |= (uint8_t)(1 << pin))
 #define cbi(port, pin)   ((port) &= (uint8_t)~(1 << pin))
@@ -44,8 +45,8 @@
 
 #define STATUS_LED	5 //PORTB
 
-#define TRUE	1
-#define FALSE	0
+#define true	1
+#define false	0
 
 #define SEG_A	PORTC3
 #define SEG_B	PORTC5
@@ -90,17 +91,13 @@ void check_alarm(void);
 
 //Declare global variables
 //=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
-uint8_t hours, minutes, seconds, ampm, flip;
-uint8_t hours_alarm, minutes_alarm, seconds_alarm, ampm_alarm, flip_alarm;
-uint8_t hours_alarm_snooze, minutes_alarm_snooze, seconds_alarm_snooze, ampm_alarm_snooze;//, flip_alarm;
+uint8_t hours, minutes, seconds, flip;
+uint8_t hours_alarm, minutes_alarm, seconds_alarm, flip_alarm;
 
-uint8_t alarm_going;
-uint8_t snooze;
-uint8_t amMark = 0;
-uint8_t amMark2 = 0;
+bool cycle;
 //=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
 
-ISR (SIG_OVERFLOW1) 
+ISR (TIMER1_OVF_vect)
 {
 	//Prescalar of 1024
 	//Clock = 16MHz
@@ -118,31 +115,37 @@ ISR (SIG_OVERFLOW1)
 		flip = 1;
 	else
 		flip = 0;
-		
-	seconds++;
-	if(seconds == 60)
+	
+	if(cycle)
 	{
-		seconds = 0;
-		minutes++;
-		if(minutes == 60)
+		if(seconds > 0)
 		{
-			minutes = 0;
-			hours++;
-
-			if(hours == 12)
+			seconds--;
+		}
+		else
+		{
+			seconds = 59;
+			if(minutes > 0)
 			{
-				if(ampm == AM)
-					ampm = PM;
-				else
-					ampm = AM;
+				minutes--;
 			}
-
-			if(hours == 13) hours = 1;
+			else
+			{
+				minutes = 59;
+				if(hours > 0)
+				{
+					hours--;
+				}
+				else
+				{
+					cycle = false;
+				}
+			}
 		}
 	}
 }
 
-ISR (SIG_OVERFLOW2) 
+ISR (TIMER2_OVF_vect)
 {
 	display_time(10); //Display current time for 1ms
 }
@@ -150,57 +153,39 @@ ISR (SIG_OVERFLOW2)
 
 int main (void)
 {
-	ioinit(); //Boot up defaults
+	ioinit();
 	
 	while(1)
 	{
-		check_buttons(); //See if we need to set the time or snooze
-		check_alarm(); //See if the current time is equal to the alarm time
+		check_buttons();
+		check_alarm();
 	}
 	
     return(0);
 }
 
-//Check to see if the time is equal to the alarm time
+// Check to see if the alarm should sound because the timer ran out
 void check_alarm(void)
 {
-	//Check wether the alarm slide switch is on or off
-	if( (PINB & (1<<BUT_ALARM)) != 0)
+	if(hours == 0 && minutes == 0 && seconds == 0)
 	{
-		if (alarm_going == FALSE)
-		{
-			//Check to see if the time equals the alarm time
-			if( (hours == hours_alarm) && (minutes == minutes_alarm) && (seconds == seconds_alarm) && (ampm == ampm_alarm) && (snooze == FALSE) )
-			{
-				//Set it off!
-				alarm_going = TRUE;
-			}
-
-			//Check to see if we need to set off the alarm again after a ~9 minute snooze
-			if( (hours == hours_alarm_snooze) && (minutes == minutes_alarm_snooze) && (seconds == seconds_alarm_snooze) && (ampm == ampm_alarm_snooze) && (snooze == TRUE) )
-			{
-				//Set it off!
-				alarm_going = TRUE;
-			}
-		}
+		siren(500);
 	}
-	else
-		alarm_going = FALSE;
 }
 
 //Checks buttons for system settings
 void check_buttons(void)
-{
+{/*
 	uint8_t i;
 	uint8_t sling_shot = 0;
 	uint8_t minute_change = 1;
 	uint8_t previous_button = 0;
 	
 	//If the user hits snooze while alarm is going off, record time so that we can set off alarm again in 9 minutes
-	if ( (PIND & (1<<BUT_SNOOZE)) == 0 && alarm_going == TRUE)
+	if ( (PIND & (1<<BUT_SNOOZE)) == 0 && alarm_going == true)
 	{
-		alarm_going = FALSE; //Turn off alarm
-		snooze = TRUE; //But remember that we are in snooze mode, alarm needs to go off again in a few minutes
+		alarm_going = false; //Turn off alarm
+		snooze = true; //But remember that we are in snooze mode, alarm needs to go off again in a few minutes
 		
 		seconds_alarm_snooze = 0;
 		minutes_alarm_snooze = minutes + 9; //Snooze to 9 minutes from now
@@ -475,7 +460,7 @@ void check_buttons(void)
 			TIMSK2 = (1<<TOIE2); //Re-enable the timer 2 interrupt
 
 	}
-
+*/
 }
 
 void clear_display(void)
@@ -597,8 +582,6 @@ void display_time(uint16_t time_on)
 	
 	for(uint16_t j = 0 ; j < time_on ; j++)
 	{
-		amMark++;
-
 #ifdef NORMAL_TIME
 		//Display normal hh:mm time
 		if(hours > 9)
@@ -643,29 +626,13 @@ void display_time(uint16_t time_on)
 			display_number(11, 4); //Turn on dot on digit 4
 			delay_us(bright_level);
 
-			//If the alarm slide is on, and alarm_going is true, make noise!
-			if(alarm_going == TRUE && flip_alarm == 1)
+			/*/If the alarm slide is on, and alarm_going is true, make noise!
+			if(alarm_going == true && flip_alarm == 1)
 			{
 				clear_display();
 				siren(500);
 				flip_alarm = 0;
-			}
-		}
-		else
-		{
-			snooze = FALSE; //If the alarm switch is turned off, this resets the ~9 minute addtional snooze timer
-			
-			hours_alarm_snooze = 88; //Set these values high, so that normal time cannot hit the snooze time accidentally
-			minutes_alarm_snooze = 88;
-			seconds_alarm_snooze = 88;
-		}
-		
-		//Check whether it is AM or PM and turn on dot
-		if((ampm == AM)&&(amMark>=5))
-		{
-			amMark = 0;	// This variable is used to help dim the am/pm dot
-			display_number(12, 6); //Turn on dot on apostrophe
-			delay_us(bright_level);
+			}*/
 		}
 
 		clear_display();
@@ -686,7 +653,6 @@ void display_alarm_time(uint16_t time_on)
 
 	for(uint16_t j = 0 ; j < time_on ; j++)
 	{
-		amMark2++;
 		//Display normal hh:mm time
 		if(hours_alarm > 9)
 		{
@@ -724,14 +690,6 @@ void display_alarm_time(uint16_t time_on)
 		if(flip == 1) 
 		{
 			display_number(10, 5); //Post to digit COL
-			delay_us(bright_level);
-		}
-		
-		//Check whether it is AM or PM and turn on dot
-		if((ampm_alarm == AM)&&(amMark2 >= 10))
-		{	
-			amMark2 = 0;
-			display_number(12, 6); //Turn on dot on apostrophe
 			delay_us(bright_level);
 		}
 
@@ -805,29 +763,20 @@ void ioinit(void)
 	hours = 88;
 	minutes = 88;
 	seconds = 88;
-
-	alarm_going = FALSE;
 	
 	sei(); //Enable interrupts
 
 	siren(200); //Make some noise at power up
 	
-	hours = 12;
-	minutes = 00;
+	hours = 0;
+	minutes = 01;
 	seconds = 00;
-	ampm = AM;
 
 	hours_alarm = 11;
 	minutes_alarm = 55;
 	seconds_alarm = 00;
-	ampm_alarm = PM;
 
-	hours_alarm_snooze = 12;
-	minutes_alarm_snooze = 00;
-	seconds_alarm_snooze = 00;
-	ampm_alarm_snooze = AM;
-	
-	snooze = FALSE;
+	cycle = true;
 
 	//Segment test
 	/*while(1)
