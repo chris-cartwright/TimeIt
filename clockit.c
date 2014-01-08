@@ -347,7 +347,6 @@ void display_time(uint16_t time_on, time_t time)
 		if(cycle)
 		{
 			display_number(12, 6);
-//This isn't dulling it for some reason
 			delay_us(BRIGHT_LEVEL);
 		}
 
