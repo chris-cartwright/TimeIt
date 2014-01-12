@@ -58,8 +58,8 @@
 
 enum maxunit_t
 {
-	HOURS,
-	MINUTES
+	HOURS = 0,
+	MINUTES = 1
 };
 
 typedef struct {
@@ -80,7 +80,8 @@ void display_number(uint8_t number, uint8_t digit);
 void display_time(uint16_t time_on, time_t time);
 void clear_display(void);
 void check_buttons(void);
-void check_alarm(void);
+void decrement(time_t* time, bool minutes);
+void increment(time_t* time, bool minutes);
 //=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
 
 //Declare global variables
@@ -108,32 +109,13 @@ ISR (TIMER1_OVF_vect)
 	
 	if(cycle)
 	{
-		if(current.seconds > 0)
+		decrement(&current, false);
+		if(current.hours == 0 && current.minutes == 0 && current.seconds == 0)
 		{
-			current.seconds--;
-		}
-		else
-		{
-			current.seconds = 59;
-			if(current.minutes > 0)
-			{
-				current.minutes--;
-			}
-			else
-			{
-				current.minutes = 59;
-				if(current.hours > 0)
-				{
-					current.hours--;
-				}
-				else
-				{
-					cycle = false;
-					current = alarm;
-					siren(500);
-					siren(500);
-				}
-			}
+			cycle = false;
+			current = alarm;
+			siren(500);
+			siren(500);
 		}
 	}
 }
@@ -169,6 +151,23 @@ void check_buttons(void)
 	if(MODE_SET == 1)
 	{
 		// Setting timer
+		if((PIND & (1 << BUT_SNOOZE)) == 0)
+		{
+			maxunit = !maxunit;
+			delay_ms(300);
+		}
+		
+		if((PINB & (1 << BUT_UP)) == 0)
+		{
+			increment(&alarm, maxunit == HOURS);
+			delay_ms(100);
+		}
+		
+		if((PINB & (1 << BUT_DOWN)) == 0)
+		{
+			decrement(&alarm, maxunit == HOURS);
+			delay_ms(100);
+		}
 	}
 	else
 	{
@@ -183,9 +182,64 @@ void check_buttons(void)
 
 			delay_ms(300);
 		}
+		
+		if((PINB & (1 << BUT_UP)) == 0)
+		{
+			cycle = false;
+			current = alarm;
+			delay_ms(300);
+		}
 	}
 	
 	delay_ms(10);
+}
+
+void decrement(time_t* time, bool minutes)
+{
+	uint8_t amount = minutes ? 60 : 1;
+	
+	if(time->seconds < amount)
+	{
+		if(time->minutes == 0)
+		{
+			if(time->hours == 0)
+			{
+				return;
+			}
+			
+			time->hours--;
+			time->minutes += 60;
+		}
+		
+		time->minutes--;
+		time->seconds += 60;
+	}
+
+	time->seconds -= amount;
+}
+
+void increment(time_t* time, bool minutes)
+{
+	uint8_t amount = minutes ? 60 : 1;
+	
+	time->seconds += amount;
+	if(time->seconds > 59)
+	{
+		time->seconds -= 60;
+		
+		time->minutes++;
+		if(time->minutes > 59)
+		{
+			time->minutes -= 60;
+			
+			time->hours++;
+			
+			if(time->hours > 59)
+			{
+				time->hours = 59;
+			}
+		}
+	}
 }
 
 void clear_display(void)
@@ -347,6 +401,12 @@ void display_time(uint16_t time_on, time_t time)
 		if(cycle)
 		{
 			display_number(12, 6);
+			delay_us(BRIGHT_LEVEL);
+		}
+		
+		if(maxunit == HOURS)
+		{
+			display_number(11, 6);
 			delay_us(BRIGHT_LEVEL);
 		}
 
