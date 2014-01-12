@@ -46,7 +46,7 @@
 
 #define DP		PORTD5
 #define COL		PORTD3
-#define AMPM		PORTB3
+#define AMPM	PORTB3
 
 #define BUT_UP		PORTB5
 #define BUT_DOWN	PORTB4
@@ -80,17 +80,16 @@ void display_number(uint8_t number, uint8_t digit);
 void display_time(uint16_t time_on, time_t time);
 void clear_display(void);
 void check_buttons(void);
-void decrement(time_t* time, bool minutes);
-void increment(time_t* time, bool minutes);
+void decrement(time_t* time, bool minutes, uint8_t scale);
+void increment(time_t* time, bool minutes, uint8_t scale);
 //=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
 
 //Declare global variables
 //=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
-bool flip;
+bool flip, cycle;
 time_t current, alarm;
 enum maxunit_t maxunit;
-
-bool cycle;
+uint8_t counter, previous_button;
 //=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
 
 ISR (TIMER1_OVF_vect)
@@ -109,7 +108,7 @@ ISR (TIMER1_OVF_vect)
 	
 	if(cycle)
 	{
-		decrement(&current, false);
+		decrement(&current, false, 1.0);
 		if(current.hours == 0 && current.minutes == 0 && current.seconds == 0)
 		{
 			cycle = false;
@@ -124,11 +123,11 @@ ISR (TIMER2_OVF_vect)
 {
 	if(MODE_SET == 1)
 	{
-		display_time(10, alarm);
+		display_time(5, alarm);
 	}
 	else
 	{
-		display_time(10, current);
+		display_time(5, current);
 	}
 }
 
@@ -153,20 +152,43 @@ void check_buttons(void)
 		// Setting timer
 		if((PIND & (1 << BUT_SNOOZE)) == 0)
 		{
+			previous_button = BUT_SNOOZE;
 			maxunit = !maxunit;
 			delay_ms(300);
 		}
-		
-		if((PINB & (1 << BUT_UP)) == 0)
+		else if((PINB & (1 << BUT_UP)) == 0)
 		{
-			increment(&alarm, maxunit == HOURS);
+			if(previous_button == BUT_UP)
+			{
+				counter++;
+			}
+			else
+			{
+				counter = 1;
+			}
+			
+			previous_button = BUT_UP;
+			increment(&alarm, maxunit == HOURS, counter);
 			delay_ms(100);
 		}
-		
-		if((PINB & (1 << BUT_DOWN)) == 0)
+		else if((PINB & (1 << BUT_DOWN)) == 0)
 		{
-			decrement(&alarm, maxunit == HOURS);
+			if(previous_button == BUT_DOWN)
+			{
+				counter++;
+			}
+			else
+			{
+				counter = 1;
+			}
+			
+			previous_button = BUT_DOWN;
+			decrement(&alarm, maxunit == HOURS, counter);
 			delay_ms(100);
+		}
+		else
+		{
+			previous_button = 0;
 		}
 	}
 	else
@@ -194,9 +216,10 @@ void check_buttons(void)
 	delay_ms(10);
 }
 
-void decrement(time_t* time, bool minutes)
+void decrement(time_t* time, bool minutes, uint8_t scale)
 {
 	uint8_t amount = minutes ? 60 : 1;
+	amount *= scale;
 	
 	if(time->seconds < amount)
 	{
@@ -218,9 +241,10 @@ void decrement(time_t* time, bool minutes)
 	time->seconds -= amount;
 }
 
-void increment(time_t* time, bool minutes)
+void increment(time_t* time, bool minutes, uint8_t scale)
 {
 	uint8_t amount = minutes ? 60 : 1;
+	amount *= scale;
 	
 	time->seconds += amount;
 	if(time->seconds > 59)
@@ -477,6 +501,9 @@ void ioinit(void)
 	cycle = false;
 	
 	maxunit = MINUTES;
+	
+	counter = 1;
+	previous_button = 0;
 
 #ifdef TEST_SEGMENT
 	while(1)
